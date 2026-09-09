@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Công cụ Phân tích Headway &amp; Gap — Khoảng cách An toàn Dòng xe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy-950:#0A1521;
+    --navy-900:#EEF2F7;
+    --navy-800:#FFFFFF;
+    --navy-700:#D7E0EA;
+    --grid-line:rgba(30,60,90,0.07);
+    --ink-100:#16283C;
+    --ink-300:#3E5064;
+    --ink-500:#64758C;
+    --amber:#B9791A;      /* headway / spacing (thời gian & khoảng cách cản trước-cản trước) */
+    --amber-dim:#E8D3A6;
+    --teal:#128C7E;       /* gap (cản sau-cản trước, khoảng cách an toàn) */
+    --teal-dim:#AEE0DA;
+    --ok:#2F9E52;
+    --warn:#B9791A;
+    --danger:#D9463F;
+    --radius-s:6px;
+    --radius-m:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #FFFFFF 0%, transparent 60%),
+      var(--navy-900);
+    color:var(--ink-100);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"IBM Plex Mono",monospace;}
+  .app{max-width:1180px;margin:0 auto;padding:0 24px 80px;}
+
+  /* ---------- Blueprint grid backdrop ---------- */
+  .gridbg{
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:28px 28px;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    padding:44px 0 20px;
+    display:grid;
+    grid-template-columns:1.05fr 1fr;
+    gap:36px;
+    align-items:center;
+  }
+  .byline{
+    display:flex;flex-wrap:wrap;align-items:center;
+    row-gap:4px;column-gap:10px;
+    font-size:12.5px;
+    color:var(--ink-500);
+    letter-spacing:0.01em;
+    margin:0 0 16px;
+  }
+  .byline .byline-name{
+    color:var(--amber);
+    font-weight:600;
+    font-family:"IBM Plex Mono",monospace;
+    letter-spacing:0.02em;
+  }
+  .byline .byline-sep{color:var(--ink-500);}
+  .hero h1{
+    font-size:clamp(28px,4vw,42px);
+    line-height:1.12;
+    margin:0 0 10px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .hero h1 span{color:var(--amber);}
+  .hero p.lede{
+    color:var(--ink-300);
+    font-size:16px;
+    max-width:46ch;
+    margin:0;
+    text-align:justify;
+    text-justify:inter-word;
+  }
+  .legend-row{
+    display:flex;
+    gap:22px;
+    margin-top:22px;
+    flex-wrap:wrap;
+  }
+  .legend-item{
+    display:flex;align-items:center;gap:8px;
+    font-size:13.5px;color:var(--ink-300);
+  }
+  .swatch{width:14px;height:14px;border-radius:3px;flex:none;}
+  .swatch.amber{background:var(--amber);}
+  .swatch.teal{background:var(--teal);}
+
+  .hero-diagram{
+    background:var(--navy-800);
+    border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);
+    padding:10px;
+  }
+  .hero-diagram svg{display:block;width:100%;height:auto;}
+  .diagram-caption{
+    font-size:12px;color:var(--ink-500);
+    padding:8px 6px 2px;
+    display:flex;justify-content:space-between;
+    font-family:"IBM Plex Mono",monospace;
+  }
+
+  @media (max-width:880px){
+    .hero{grid-template-columns:1fr;padding-top:36px;}
+  }
+
+  /* ---------- Section shell ---------- */
+  section{margin-top:52px;}
+  .section-head{margin-bottom:20px;}
+  .section-head h2{
+    font-size:21px;margin:0 0 6px;font-weight:600;
+  }
+  .section-head p{margin:0;color:var(--ink-500);font-size:14.5px;max-width:64ch;}
+
+  /* ---------- Controls ---------- */
+  .panel{
+    background:var(--navy-800);
+    border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);
+    padding:26px 26px 10px;
+  }
+  .control-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:22px 32px;
+  }
+  @media (max-width:700px){.control-grid{grid-template-columns:1fr;}}
+  .control{padding-bottom:18px;}
+  .control label{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-size:14px;color:var(--ink-300);margin-bottom:8px;
+  }
+  .control label .val{
+    font-family:"IBM Plex Mono",monospace;
+    color:var(--ink-100);font-size:14.5px;font-weight:600;
+  }
+  input[type=range]{
+    -webkit-appearance:none;width:100%;height:4px;
+    background:var(--navy-700);border-radius:3px;outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--amber);border:2px solid var(--navy-900);cursor:pointer;
+    box-shadow:0 0 0 3px rgba(185,121,26,0.18);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;border-radius:50%;
+    background:var(--amber);border:2px solid var(--navy-900);cursor:pointer;
+  }
+  .control small{display:block;margin-top:6px;color:var(--ink-500);font-size:12px;}
+  select.select-dark{
+    width:100%;
+    background:var(--navy-900);
+    color:var(--ink-100);
+    border:1px solid var(--navy-700);
+    border-radius:var(--radius-s);
+    padding:9px 12px;
+    font-family:"IBM Plex Sans",sans-serif;
+    font-size:14px;
+    cursor:pointer;
+    appearance:none;
+    -webkit-appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0L5 6L10 0Z' fill='%2364758C'/></svg>");
+    background-repeat:no-repeat;
+    background-position:right 14px center;
+  }
+  select.select-dark:focus{outline:2px solid rgba(185,121,26,0.35);outline-offset:1px;}
+  @media (max-width:980px){.results-grid[style]{grid-template-columns:repeat(2,1fr) !important;}}
+
+  /* ---------- Results ---------- */
+  .results-grid{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:14px;
+  }
+  @media (max-width:980px){.results-grid{grid-template-columns:repeat(2,1fr);}}
+  .stat-card{
+    background:var(--navy-800);
+    border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);
+    padding:18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .stat-card::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--accent,var(--amber));
+  }
+  .stat-card .label{font-size:12.5px;color:var(--ink-500);margin-bottom:8px;}
+  .stat-card .value{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:25px;font-weight:600;color:var(--ink-100);
+  }
+  .stat-card .unit{font-size:13px;color:var(--ink-500);margin-left:4px;}
+  .stat-card.safety{grid-column:span 1;}
+  .safety-pill{
+    display:inline-block;margin-top:10px;padding:3px 10px;border-radius:20px;
+    font-size:12.5px;font-weight:600;
+  }
+
+  /* ---------- Charts ---------- */
+  .chart-row{
+    display:grid;grid-template-columns:1fr 1fr;gap:20px;
+  }
+  @media (max-width:900px){.chart-row{grid-template-columns:1fr;}}
+  .chart-card{
+    background:var(--navy-800);
+    border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);
+    padding:20px;
+  }
+  .chart-card h3{margin:0 0 4px;font-size:15px;font-weight:600;}
+  .chart-card .sub{font-size:12.5px;color:var(--ink-500);margin:0 0 14px;}
+  .chart-card canvas{max-height:260px;}
+  .chart-card + .chart-card{margin-top:20px;}
+
+  /* ---------- Sensitivity table ---------- */
+  .table-scroll{overflow-x:auto;}
+  table.sens-table{
+    border-collapse:collapse;width:100%;min-width:560px;
+    font-family:"IBM Plex Mono",monospace;font-size:13px;
+  }
+  table.sens-table th, table.sens-table td{
+    padding:8px 10px;text-align:right;border-bottom:1px solid var(--navy-700);
+  }
+  table.sens-table thead th{
+    color:var(--ink-500);font-weight:600;font-size:12px;
+    border-bottom:1px solid var(--navy-700);
+  }
+  table.sens-table thead th:first-child, table.sens-table td.rowhead{
+    text-align:left;color:var(--ink-300);
+  }
+  table.sens-table td.rowhead{font-weight:600;}
+  table.sens-table td.hit{
+    background:rgba(185,121,26,0.16);color:var(--ink-100);
+    box-shadow:inset 0 0 0 1px rgba(185,121,26,0.4);
+    border-radius:4px;
+  }
+
+  /* ---------- Fundamental diagram ---------- */
+  .fd-layout{
+    display:grid;grid-template-columns:280px 1fr;gap:24px;
+  }
+  @media (max-width:820px){.fd-layout{grid-template-columns:1fr;}}
+  .fd-note{
+    background:var(--navy-800);border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);padding:18px;font-size:13.5px;color:var(--ink-300);
+  }
+  .fd-note b{color:var(--ink-100);}
+  .fd-note .k{color:var(--amber);}
+  .fd-note .t{color:var(--teal);}
+
+  /* ---------- Notes / glossary ---------- */
+  .glossary{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:16px 32px;
+  }
+  @media (max-width:820px){.glossary{grid-template-columns:1fr;}}
+  .gloss-item{border-top:1px solid var(--navy-700);padding-top:12px;}
+  .gloss-item dt{font-weight:600;font-size:14.5px;margin-bottom:4px;}
+  .gloss-item dt .tag{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-500);margin-left:6px;
+  }
+  .gloss-item dd{margin:0;color:var(--ink-300);font-size:13.5px;}
+
+  .ideas{
+    background:var(--navy-800);border:1px solid var(--navy-700);
+    border-radius:var(--radius-m);padding:22px 26px;margin-top:18px;
+  }
+  .ideas h3{margin:0 0 10px;font-size:16px;}
+  .ideas ul{margin:0;padding-left:20px;color:var(--ink-300);font-size:13.5px;}
+  .ideas li{margin-bottom:8px;}
+
+  footer{
+    position:relative;
+    margin-top:60px;
+    padding:26px 0 22px;
+    border-top:1px solid var(--navy-700);
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:20px;
+  }
+  footer::before{
+    content:"";
+    position:absolute;top:-1px;left:0;
+    width:56px;height:2px;
+    background:linear-gradient(90deg, var(--amber), var(--teal));
+  }
+  footer .footer-note{
+    color:var(--ink-500);font-size:12.5px;line-height:1.6;
+    max-width:52ch;margin:0;
+  }
+  footer .footer-credit{
+    text-align:right;font-size:12.5px;color:var(--ink-500);line-height:1.6;
+  }
+  footer .footer-credit .credit-label{
+    text-transform:uppercase;letter-spacing:0.08em;font-size:10.5px;
+    color:var(--ink-500);margin-bottom:4px;display:block;
+  }
+  footer .footer-credit .credit-name{
+    font-family:"IBM Plex Mono",monospace;font-weight:600;color:var(--ink-100);font-size:13.5px;
+  }
+  @media (max-width:640px){
+    footer{flex-direction:column;}
+    footer .footer-credit{text-align:left;}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    * {animation-duration:0.001ms !important; animation-iteration-count:1 !important;}
+  }
+</style>
+</head>
+<body class="gridbg">
+<div class="app">
+
+  <!-- ============ HERO ============ -->
+  <header class="hero">
+    <div class="hero-text">
+      <h1>Phân tích Headway &amp; Gap trong <span>Dòng Giao thông</span></h1>
+      <div class="byline">
+        <span class="byline-name">TS. Đặng Minh Tân</span>
+        <span class="byline-sep">·</span>
+        <span>Bộ môn Đường bộ – Sân bay</span>
+        <span class="byline-sep">·</span>
+        <span>Khoa Công trình và Môi trường</span>
+        <span class="byline-sep">·</span>
+        <span>Trường Đại học Giao thông Vận tải</span>
+      </div>
+      <p class="lede">Công cụ tính và minh họa hai đại lượng hay bị nhầm lẫn trong dòng xe: khoảng cách tính theo <b>thời gian</b> (headway / time gap) và khoảng cách tính theo <b>không gian</b> (spacing / distance gap). Kéo các thanh trượt, hoặc lựa chọn các thông số bên dưới để xem xe di chuyển và số liệu thay đổi trực tiếp.</p>
+      <div class="legend-row">
+        <div class="legend-item"><span class="swatch amber"></span> Headway &amp; spacing (cản trước–cản trước, theo thời gian &amp; khoảng cách)</div>
+        <div class="legend-item"><span class="swatch teal"></span> Gap — time gap (tg) &amp; distance gap (sg): Cản sau–cản trước, khoảng cách an toàn giữa 2 xe</div>
+      </div>
+    </div>
+    <div class="hero-diagram">
+      <svg id="roadSvg" viewBox="0 0 640 300" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="diagram-caption">
+        <span id="capLeft">h = -- s</span>
+        <span id="capRight">v = -- km/h</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ CONTROLS ============ -->
+  <section id="controls">
+    <div class="section-head">
+      <h2>Thông số đầu vào</h2>
+      <p>Đặt tốc độ dòng xe, <b>time gap</b> mong muốn (khoảng trống theo thời gian, tg) và chiều dài xe — từ đó suy ra headway, spacing, distance gap và các đại lượng còn lại.</p>
+    </div>
+    <div class="panel">
+      <div class="control-grid">
+        <div class="control">
+          <label>Tốc độ xe chạy, v <span class="val mono" id="vVal">60 km/h</span></label>
+          <input type="range" id="vRange" min="10" max="120" step="1" value="60">
+          <small>Tốc độ dòng xe ổn định (giả thiết mọi xe chạy cùng tốc độ).</small>
+        </div>
+        <div class="control">
+          <label>Time gap mong muốn, tg <span class="val mono" id="tgVal">1.5 s</span></label>
+          <input type="range" id="tgRange" min="0.3" max="4" step="0.1" value="1.5">
+          <small>Khoảng trống thời gian bạn muốn giữ SAU KHI xe trước đã đi qua hết chiều dài của nó. Headway (h) sẽ được tính lại từ tg.</small>
+        </div>
+        <div class="control">
+          <label>Chiều dài xe, L <span class="val mono" id="lVal">4.5 m</span></label>
+          <input type="range" id="lRange" min="3" max="18" step="0.1" value="4.5">
+          <small>Xe con ≈ 4–5 m, xe khách/tải ≈ 8–12 m, sơ-mi rơ-moóc ≈ 16–18 m.</small>
+        </div>
+        <div class="control">
+          <label>Thời gian phản ứng của lái xe, t<sub>pư</sub> <span class="val mono" id="trVal">1.0 s</span></label>
+          <input type="range" id="trRange" min="0.5" max="2.5" step="0.1" value="1.0">
+          <small>Dùng để ước lượng cự ly hãm phanh an toàn.</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section id="results">
+    <div class="section-head">
+      <h2>Kết quả tức thời</h2>
+      <p>Nhập time gap (tg) mong muốn — headway (h) được tính ngược lại: h = tg + chiều dài xe/tốc độ.</p>
+    </div>
+    <div class="results-grid">
+      <div class="stat-card" style="--accent:var(--amber)">
+        <div class="label">Spacing (sh) — khoảng cách cản trước–cản trước</div>
+        <div class="value mono"><span id="spacingOut">--</span><span class="unit">m</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--teal)">
+        <div class="label">Gap (sg) — cản sau–cản trước (khoảng cách an toàn)</div>
+        <div class="value mono"><span id="gapOut">--</span><span class="unit">m</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--amber)">
+        <div class="label">Time headway, h — tính từ tg</div>
+        <div class="value mono"><span id="hOut">--</span><span class="unit">s</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--amber)">
+        <div class="label">Mật độ dòng xe, k</div>
+        <div class="value mono"><span id="densityOut">--</span><span class="unit">xe/km/làn</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--amber)">
+        <div class="label">Lưu lượng, q</div>
+        <div class="value mono"><span id="flowOut">--</span><span class="unit">xe/h/làn</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STOPPING SIGHT DISTANCE ============ -->
+  <section id="ssd">
+    <div class="section-head">
+      <h2>Cự ly hãm trước chướng ngại vật (Stopping Sight Distance)</h2>
+      <p>Cự ly hãm (SSD) là quãng đường xe cần để dừng hẳn trước một chướng ngại vật cố định, kể từ lúc lái xe nhìn thấy nó: SSD = d<sub>pư</sub> + d<sub>hãm</sub> = v·t<sub>pư</sub> + v²⁄(2·a), với v là tốc độ, t<sub>pư</sub> là thời gian phản ứng (thanh trượt ở mục Thông số đầu vào), và a là gia tốc hãm — phụ thuộc loại xe được chọn bên dưới (giả thiết đơn giản hóa, mỗi loại xe một mức gia tốc hãm đại diện).</p>
+    </div>
+    <div class="panel">
+      <div class="control" style="max-width:420px;padding-bottom:6px;">
+        <label>Loại xe <span class="val mono" id="vehTypeVal">Xe con</span></label>
+        <select id="vehTypeSelect" class="select-dark">
+          <option value="car">Xe con (a ≈ 6.0 m/s²)</option>
+          <option value="motorcycle">Xe máy (a ≈ 5.5 m/s²)</option>
+          <option value="lighttruck">Xe khách / xe tải nhẹ (a ≈ 4.0 m/s²)</option>
+          <option value="heavytruck">Xe tải nặng / sơ-mi rơ-moóc (a ≈ 2.8 m/s²)</option>
+        </select>
+        <small>Gia tốc hãm (a) là giá trị đại diện, đơn giản hóa theo loại xe — mặt đường khô, phanh tốt.</small>
+      </div>
+    </div>
+    <div class="results-grid" style="margin-top:14px;grid-template-columns:repeat(3,1fr);">
+      <div class="stat-card" style="--accent:var(--ink-500)">
+        <div class="label">Cự ly phản ứng, d<sub>pư</sub> = v·t<sub>pư</sub></div>
+        <div class="value mono"><span id="dReactOut">--</span><span class="unit">m</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--danger)">
+        <div class="label">Cự ly hãm phanh, d<sub>hãm</sub> = v²⁄(2a)</div>
+        <div class="value mono"><span id="dBrakeOut">--</span><span class="unit">m</span></div>
+      </div>
+      <div class="stat-card" style="--accent:var(--ink-100)">
+        <div class="label">SSD = d<sub>pư</sub> + d<sub>hãm</sub></div>
+        <div class="value mono"><span id="ssdOut">--</span><span class="unit">m</span></div>
+      </div>
+    </div>
+    <div class="chart-card" style="margin-top:14px;">
+      <h3>Minh họa cự ly hãm trước chướng ngại vật</h3>
+      <p class="sub">Không theo tỉ lệ tuyệt đối — chỉ minh họa tỉ lệ giữa d<sub>pư</sub> và d<sub>hãm</sub> trong tổng SSD</p>
+      <svg id="ssdSvg" viewBox="0 0 640 170" preserveAspectRatio="xMidYMid meet" style="width:100%;height:auto;display:block;"></svg>
+    </div>
+  </section>
+
+  <!-- ============ CHARTS ============ -->
+  <section id="charts">
+    <div class="section-head">
+      <h2>Biểu đồ theo tốc độ</h2>
+      <p>Giữ nguyên tg và L hiện tại, xem spacing/gap thay đổi thế nào khi tốc độ thay đổi từ 10–120 km/h.</p>
+    </div>
+    <div class="chart-card">
+      <h3>Spacing &amp; Gap theo tốc độ</h3>
+      <p class="sub">sh = v·h &nbsp;|&nbsp; sg = sh − L</p>
+      <canvas id="chartSpacing"></canvas>
+    </div>
+  </section>
+
+  <!-- ============ SENSITIVITY: v × tg → spacing ============ -->
+  <section id="sensitivity">
+    <div class="section-head">
+      <h2>Phân tích độ nhạy — khoảng cách theo tốc độ và time gap</h2>
+      <p>Khoảng cách an toàn, tức distance gap (sg = v·tg) ứng với 8 mức tốc độ (50–120 km/h) và 6 mức time gap — tg (1–6 giây) — dùng để tra nhanh, không phụ thuộc thanh trượt phía trên.</p>
+    </div>
+    <div class="chart-card">
+      <h3>Distance gap sg (m) theo tốc độ, mỗi đường ứng với 1 mức time gap</h3>
+      <p class="sub">sg = v·tg &nbsp;—&nbsp; điểm tô sáng là tổ hợp (v, tg) gần nhất với thanh trượt đang chọn</p>
+      <canvas id="chartSensitivity" style="max-height:340px;"></canvas>
+    </div>
+    <div class="chart-card sens-table-card">
+      <h3>Bảng tra khoảng cách sg (m)</h3>
+      <p class="sub">Hàng: tốc độ (km/h) &nbsp;·&nbsp; Cột: time gap (s)</p>
+      <div class="table-scroll">
+        <table class="sens-table" id="sensTable"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ GAP vs DENSITY ============ -->
+  <section id="gapdensity">
+    <div class="section-head">
+      <h2>Gap tăng → mật độ giảm</h2>
+      <p>Ở tốc độ v và chiều dài xe L hiện tại, tăng time gap (tg) sẽ trực tiếp làm tăng distance gap (sg = tg·v), kéo theo spacing (sh = sg + L) tăng và mật độ dòng xe (k = 1000⁄sh) giảm. Vì năng lực thông hành ở trạng thái bão hòa được tính từ headway (q = 3600⁄h, với h = tg + L⁄v), tg tăng cũng làm h tăng theo và năng lực giảm theo. Nói cách khác, cùng một chiều dài đường sẽ chở được ít xe hơn — đây là đánh đổi cơ bản giữa an toàn (tg lớn) và hiệu quả khai thác đường (mật độ, năng lực cao), đúng như biểu đồ dưới đây thể hiện.</p>
+      <p><b>Time gap</b> là chỉ tiêu <b>an toàn</b> — khoảng trống thời gian thực tế lái xe có để phản ứng nếu xe trước dừng đột ngột, nên được chọn theo yêu cầu an toàn bám đuôi. <b>Headway</b> là chỉ tiêu <b>chất lượng dòng giao thông</b> — vì năng lực thông hành của làn đường suy ra trực tiếp từ nó, chứ không phải từ time gap.</p>
+    </div>
+    <div class="chart-card">
+      <h3>Mật độ k theo time gap (tg)</h3>
+      <p class="sub">k = 1000⁄(tg·v + L) &nbsp;—&nbsp; điểm tô sáng là tg đang chọn ở thanh trượt phía trên</p>
+      <canvas id="chartGapDensity"></canvas>
+    </div>
+  </section>
+
+  <!-- ============ GLOSSARY / IDEAS ============ -->
+  <section id="glossary">
+    <div class="section-head">
+      <h2>Phân biệt nhanh</h2>
+    </div>
+    <dl class="glossary">
+      <div class="gloss-item">
+        <dt>Time gap, tg <span class="tag">s</span></dt>
+        <dd>Khoảng trống AN TOÀN tính theo thời gian, do bạn chọn trực tiếp bằng thanh trượt — là thời gian trống thực tế lái xe có để phản ứng nếu xe trước dừng đột ngột. Đây là đại lượng nên dùng khi đánh giá an toàn bám đuôi.</dd>
+      </div>
+      <div class="gloss-item">
+        <dt>Gap (sg, distance gap) <span class="tag">m</span></dt>
+        <dd>Khoảng trống AN TOÀN tính theo không gian — từ cản sau xe trước đến cản trước xe sau: <b>sg = tg × v</b>. Đừng nhầm với time gap (tg): sg đo bằng mét, tg đo bằng giây.</dd>
+      </div>
+      <div class="gloss-item">
+        <dt>Spacing (sh) <span class="tag">m</span></dt>
+        <dd>Khoảng cách từ cản trước xe này đến cản trước xe kia (2 xe liên tiếp), đo theo không gian: <b>sh = sg + chiều dài xe trước (L)</b>.</dd>
+      </div>
+      <div class="gloss-item">
+        <dt>Time headway, h <span class="tag">s</span></dt>
+        <dd>Khoảng thời gian giữa lúc cản trước 2 xe liên tiếp đi qua cùng một điểm cố định trên đường — spacing tính theo thời gian: <b>h = sh ⁄ v = tg + L⁄v</b>. Đây là chỉ tiêu ảnh hưởng năng lực thông hành (q = 3600⁄h), khác với time gap (tg) là chỉ tiêu an toàn.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <footer>
+    <p class="footer-note">Công cụ minh họa headway / gap / mật độ dòng xe — sơ đồ chuyển động chỉ mang tính minh họa, không theo tỉ lệ thời gian hay khoảng cách tuyệt đối.</p>
+    <div class="footer-credit">
+      <span class="credit-label">Phát triển</span>
+      <span class="credit-name">TS. Đặng Minh Tân</span><br>
+      Bộ môn Đường bộ - Sân bay, Khoa Công trình và Môi trường<br>
+      Trường Đại học Giao thông Vận tải
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- DOM refs ----------
+  const vRange=document.getElementById('vRange'), tgRange=document.getElementById('tgRange'),
+        lRange=document.getElementById('lRange'), trRange=document.getElementById('trRange');
+  const vVal=document.getElementById('vVal'), tgVal=document.getElementById('tgVal'),
+        lVal=document.getElementById('lVal'), trVal=document.getElementById('trVal');
+  const spacingOut=document.getElementById('spacingOut'), gapOut=document.getElementById('gapOut'),
+        hOut=document.getElementById('hOut'), densityOut=document.getElementById('densityOut'),
+        flowOut=document.getElementById('flowOut');
+  const capLeft=document.getElementById('capLeft'), capRight=document.getElementById('capRight');
+  const vehTypeSelect=document.getElementById('vehTypeSelect'), vehTypeVal=document.getElementById('vehTypeVal');
+  const dReactOut=document.getElementById('dReactOut'), dBrakeOut=document.getElementById('dBrakeOut'),
+        ssdOut=document.getElementById('ssdOut');
+
+  const VEHICLE_PRESETS = {
+    car:        {label:'Xe con',                         decel:6.0},
+    motorcycle: {label:'Xe máy',                          decel:5.5},
+    lighttruck: {label:'Xe khách / xe tải nhẹ',           decel:4.0},
+    heavytruck: {label:'Xe tải nặng / sơ-mi rơ-moóc',     decel:2.8}
+  };
+
+  const state={ v:60, tg:1.5, h:2.0, L:4.5, tr:1.0, decel:VEHICLE_PRESETS.car.decel, vehType:'car' };
+
+  function fmt(n,d){ return isFinite(n) ? n.toFixed(d) : '—'; }
+
+  // ---------- core physics ----------
+  // Time gap (tg) is now the input: it's the time the driver leaves AFTER
+  // the lead vehicle's length has cleared. Headway (h) is derived from it
+  // — h is always tg plus however long it takes to cover the lead car's
+  // own length at the current speed.
+  function compute(v_kmh,tg_s,L_m,tr_s,decel){
+    const v_ms = v_kmh/3.6;
+    const gapTime = tg_s;                             // s (input)
+    const gap = gapTime*v_ms;                          // m
+    const spacing = gap + L_m;                         // m
+    const h = v_ms>0 ? spacing/v_ms : 0;                // s (derived headway)
+    const density = spacing>0 ? 1000/spacing : 0;       // veh/km/lane
+    const flow = h>0 ? 3600/h : 0;                      // veh/h/lane
+    const dReact = v_ms*tr_s;                           // m — perception-reaction distance
+    const dBrake = (v_ms*v_ms)/(2*decel);               // m — braking distance
+    const stopDist = dReact + dBrake;                   // m — Stopping Sight Distance (SSD)
+    return {v_ms,spacing,gap,gapTime,h,density,flow,dReact,dBrake,stopDist};
+  }
+
+  // ---------- SVG hero diagram ----------
+  const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.getElementById('roadSvg');
+  const VB_W=640, VB_H=300;
+  // Two lanes, one per direction, separated by a dashed centerline —
+  // our animated traffic drives left -> right in the lane on its right
+  // side (bottom lane here), matching right-hand traffic. The top lane
+  // represents the opposite direction and is drawn but left empty.
+  const LANE_H=52;
+  const OPP_LANE_TOP=80, OPP_LANE_BOT=OPP_LANE_TOP+LANE_H;      // opposite direction (top)
+  const LANE_TOP=OPP_LANE_BOT, LANE_BOT=LANE_TOP+LANE_H;        // our direction (bottom, right-hand lane)
+  const LANE_MID=(LANE_TOP+LANE_BOT)/2;
+  const PAVE_TOP=OPP_LANE_TOP-20, PAVE_BOT=LANE_BOT+20;
+  const DETECTOR_X=340;
+
+  function el(tag,attrs){
+    const e=document.createElementNS(svgNS,tag);
+    for(const k in attrs) e.setAttribute(k,attrs[k]);
+    return e;
+  }
+
+  // static layer: shoulder/pavement context, then the two marked lanes
+  svg.appendChild(el('rect',{x:0,y:0,width:VB_W,height:VB_H,fill:'#0F2033'}));
+  svg.appendChild(el('rect',{x:0,y:PAVE_TOP,width:VB_W,height:PAVE_BOT-PAVE_TOP,fill:'#122336'}));
+  svg.appendChild(el('rect',{x:0,y:OPP_LANE_TOP,width:VB_W,height:OPP_LANE_BOT-OPP_LANE_TOP,fill:'#16283C'}));
+  svg.appendChild(el('rect',{x:0,y:LANE_TOP,width:VB_W,height:LANE_BOT-LANE_TOP,fill:'#1B3550'}));
+  // outer road edges (solid) — top edge of the opposite lane, bottom edge of our lane
+  svg.appendChild(el('rect',{x:0,y:OPP_LANE_TOP-2,width:VB_W,height:2,fill:'#DCD6BE'}));
+  svg.appendChild(el('rect',{x:0,y:LANE_BOT,width:VB_W,height:2,fill:'#DCD6BE'}));
+  // centerline separating the two directions (dashed yellow)
+  svg.appendChild(el('line',{x1:0,y1:LANE_TOP,x2:VB_W,y2:LANE_TOP,stroke:'#E8B94A','stroke-width':2,'stroke-dasharray':'14,10'}));
+  // opposite-direction hint (static, no animated car — keeps focus on our lane)
+  svg.appendChild(el('text',{x:90,y:OPP_LANE_TOP+LANE_H/2+4,fill:'#5A7089','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace'})).textContent='⟵ chiều ngược lại';
+  // detector line, spanning the full dimension-line height
+  svg.appendChild(el('line',{x1:DETECTOR_X,y1:60,x2:DETECTOR_X,y2:LANE_BOT+62,stroke:'#7F93AC','stroke-width':1.5,'stroke-dasharray':'3,4'}));
+  svg.appendChild(el('text',{x:DETECTOR_X,y:30,fill:'#7F93AC','font-size':11,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace'})).textContent='điểm đo cố định';
+
+  // dynamic layer: cars + labels. Car body width scales with vehicle
+  // length L (state.L), so a truck visibly looks longer than a car.
+  const carFront=el('g',{});
+  const carRear=el('g',{});
+  let carHalfPx=30; // TRUE half-length in px (from real L) — used for crossing-detection timing so "đo được" stays exact
+  let visualHalfPx=30; // RENDERED half-length in px (after the legibility floor) — used for drawing the sh/sg dimension lines so they visually touch the car's actual drawn edges
+  function makeCar(color){
+    const g=el('g',{});
+    const body=el('rect',{x:-30,y:-15,width:60,height:30,rx:6,fill:color,stroke:'#0A1521','stroke-width':2});
+    // small windshield hint near the front (right side, since travel is left -> right)
+    const glass=el('rect',{x:14,y:-9,width:10,height:18,rx:2,fill:'#0A1521',opacity:0.35});
+    g.appendChild(body); g.appendChild(glass);
+    g.dataset.body='';
+    return {group:g, body, glass};
+  }
+  const frontCar=makeCar('#FFC857'); carFront.appendChild(frontCar.group);
+  const rearCar=makeCar('#4FD1C5'); carRear.appendChild(rearCar.group);
+  svg.appendChild(carRear);
+  svg.appendChild(carFront);
+
+
+  // headway (sh) dimension line + gap (sg) dimension line — drawn like
+  // engineering dimension lines: a line with short perpendicular tick
+  // marks at both ends, so the measured span is easy to read at a glance.
+  const spacingLine=el('line',{stroke:'#FFC857','stroke-width':1.6});
+  const spacingTick1=el('line',{stroke:'#FFC857','stroke-width':1.6});
+  const spacingTick2=el('line',{stroke:'#FFC857','stroke-width':1.6});
+  const spacingLabel=el('text',{fill:'#FFC857','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace','font-weight':600});
+  const gapLine=el('line',{stroke:'#4FD1C5','stroke-width':1.6});
+  const gapTick1=el('line',{stroke:'#4FD1C5','stroke-width':1.6});
+  const gapTick2=el('line',{stroke:'#4FD1C5','stroke-width':1.6});
+  const gapLabel=el('text',{fill:'#4FD1C5','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace','font-weight':600});
+  svg.appendChild(spacingLine); svg.appendChild(spacingTick1); svg.appendChild(spacingTick2); svg.appendChild(spacingLabel);
+  svg.appendChild(gapLine); svg.appendChild(gapTick1); svg.appendChild(gapTick2); svg.appendChild(gapLabel);
+
+  // stopwatch pulse rings at detector — amber for headway (front bumper
+  // to front bumper), teal for the gap window (rear-of-lead to front-of-follow)
+  const pulseFront=el('circle',{cx:DETECTOR_X,cy:OPP_LANE_TOP-10,r:4,fill:'#FFC857',opacity:0});
+  const pulseRear=el('circle',{cx:DETECTOR_X,cy:LANE_BOT+10,r:4,fill:'#4FD1C5',opacity:0});
+  const pulseGapA=el('circle',{cx:DETECTOR_X,cy:LANE_BOT+62,r:4,fill:'#4FD1C5',opacity:0});
+  const pulseGapB=el('circle',{cx:DETECTOR_X,cy:LANE_BOT+62,r:4,fill:'#4FD1C5',opacity:0});
+  const pulseFollowRear=el('circle',{cx:DETECTOR_X,cy:LANE_BOT+62,r:4,fill:'#4FD1C5',opacity:0});
+  svg.appendChild(pulseFront); svg.appendChild(pulseRear); svg.appendChild(pulseGapA); svg.appendChild(pulseGapB); svg.appendChild(pulseFollowRear);
+  const hwTimer=el('text',{x:DETECTOR_X,y:LANE_BOT+40,fill:'#EAF2FB','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace'});
+  svg.appendChild(hwTimer);
+  const gapTimer=el('text',{x:DETECTOR_X,y:LANE_BOT+92,fill:'#4FD1C5','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace'});
+  svg.appendChild(gapTimer);
+
+  // ---------- Stopping Sight Distance illustration (static, own <svg>) ----------
+  const ssdSvg = document.getElementById('ssdSvg');
+  const SSD_CAR_X0=20, SSD_CAR_X1=70, SSD_LANE_Y0=78, SSD_LANE_Y1=112, SSD_MID=(SSD_LANE_Y0+SSD_LANE_Y1)/2;
+  ssdSvg.appendChild(el('rect',{x:0,y:0,width:640,height:170,fill:'#0F2033'}));
+  ssdSvg.appendChild(el('rect',{x:0,y:SSD_LANE_Y0,width:640,height:SSD_LANE_Y1-SSD_LANE_Y0,fill:'#152A40'}));
+  ssdSvg.appendChild(el('rect',{x:0,y:SSD_LANE_Y0-2,width:640,height:2,fill:'#3A5670'}));
+  ssdSvg.appendChild(el('rect',{x:0,y:SSD_LANE_Y1,width:640,height:2,fill:'#3A5670'}));
+  // car icon (static, illustrative only — not scaled to the L slider)
+  ssdSvg.appendChild(el('rect',{x:SSD_CAR_X0,y:SSD_MID-15,width:SSD_CAR_X1-SSD_CAR_X0,height:30,rx:6,fill:'#FFC857',stroke:'#0A1521','stroke-width':2}));
+  ssdSvg.appendChild(el('rect',{x:SSD_CAR_X1-24,y:SSD_MID-9,width:10,height:18,rx:2,fill:'#0A1521',opacity:0.35}));
+  // dynamic pieces, positioned/labelled by updateSsdDiagram()
+  const ssdReactLine=el('line',{stroke:'#7F93AC','stroke-width':4,'stroke-linecap':'round'});
+  const ssdBrakeLine=el('line',{stroke:'#FF6E6E','stroke-width':4,'stroke-linecap':'round'});
+  const ssdReactLabel=el('text',{fill:'#B9C9DC','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace','font-weight':600});
+  const ssdBrakeLabel=el('text',{fill:'#FF6E6E','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace','font-weight':600});
+  const ssdTotalLine=el('line',{stroke:'#EAF2FB','stroke-width':1.6});
+  const ssdTotalTick1=el('line',{stroke:'#EAF2FB','stroke-width':1.6});
+  const ssdTotalTick2=el('line',{stroke:'#EAF2FB','stroke-width':1.6});
+  const ssdTotalLabel=el('text',{fill:'#EAF2FB','font-size':12,'text-anchor':'middle','font-family':'IBM Plex Mono,monospace','font-weight':600});
+  const ssdObstacle=el('g',{});
+  ssdObstacle.appendChild(el('polygon',{points:'0,-16 14,10 -14,10',fill:'#FF6E6E',stroke:'#0A1521','stroke-width':2}));
+  ssdObstacle.appendChild(el('text',{x:0,y:5,fill:'#0A1521','font-size':13,'font-weight':700,'text-anchor':'middle'})).textContent='!';
+  [ssdReactLine,ssdBrakeLine,ssdReactLabel,ssdBrakeLabel,ssdTotalLine,ssdTotalTick1,ssdTotalTick2,ssdTotalLabel].forEach(n=>ssdSvg.appendChild(n));
+  ssdSvg.appendChild(ssdObstacle);
+
+  function updateSsdDiagram(dReact_m, dBrake_m){
+    const ssd_m = Math.max(dReact_m+dBrake_m, 0.1);
+    const usablePx = 640 - SSD_CAR_X1 - 40; // leave room for the obstacle icon on the right
+    const scale = usablePx/ssd_m;
+    const reactPx = dReact_m*scale, brakePx = dBrake_m*scale;
+    const x0=SSD_CAR_X1, x1=x0+reactPx, x2=x1+brakePx;
+    const y=SSD_MID;
+
+    ssdReactLine.setAttribute('x1',x0); ssdReactLine.setAttribute('x2',x1);
+    ssdReactLine.setAttribute('y1',y); ssdReactLine.setAttribute('y2',y);
+    ssdBrakeLine.setAttribute('x1',x1); ssdBrakeLine.setAttribute('x2',x2);
+    ssdBrakeLine.setAttribute('y1',y); ssdBrakeLine.setAttribute('y2',y);
+
+    ssdReactLabel.setAttribute('x',(x0+x1)/2); ssdReactLabel.setAttribute('y',y-30);
+    ssdReactLabel.textContent='d_pư = '+fmt(dReact_m,1)+' m';
+    ssdBrakeLabel.setAttribute('x',(x1+x2)/2); ssdBrakeLabel.setAttribute('y',y-30);
+    ssdBrakeLabel.textContent='d_hãm = '+fmt(dBrake_m,1)+' m';
+
+    const yb=y+38;
+    ssdTotalLine.setAttribute('x1',x0); ssdTotalLine.setAttribute('x2',x2);
+    ssdTotalLine.setAttribute('y1',yb); ssdTotalLine.setAttribute('y2',yb);
+    ssdTotalTick1.setAttribute('x1',x0); ssdTotalTick1.setAttribute('x2',x0);
+    ssdTotalTick1.setAttribute('y1',yb-6); ssdTotalTick1.setAttribute('y2',yb+6);
+    ssdTotalTick2.setAttribute('x1',x2); ssdTotalTick2.setAttribute('x2',x2);
+    ssdTotalTick2.setAttribute('y1',yb-6); ssdTotalTick2.setAttribute('y2',yb+6);
+    ssdTotalLabel.setAttribute('x',(x0+x2)/2); ssdTotalLabel.setAttribute('y',yb+18);
+    ssdTotalLabel.textContent='SSD = '+fmt(ssd_m,1)+' m';
+
+    ssdObstacle.setAttribute('transform',`translate(${x2} ${y})`);
+  }
+
+  // ---------- animation loop (travel direction: left -> right) ----------
+  let frontX=-60, rearX, animSpeed=80, spacingPx=110;
+  let lastTs=null, frontCrossT=null, rearCrossT=null, measuredH=null;
+  let gapStartT=null, gapEndT=null, measuredGapT=null;
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function layoutDiagram(spacing_m, L_m, h_s){
+    // Scale is derived from SPACING ONLY (never from L). That keeps the
+    // pixel ratio between car and spacing always equal to the real-world
+    // ratio (so "đo được" == "tính", per the earlier fix), AND keeps the
+    // car genuinely sensitive to the L slider: if scale also depended on
+    // L (as an earlier version did, via max(MIN_CAR_PX/L, ...)), then for
+    // any L small enough that the car-floor constraint won, the algebra
+    // reduced to carLenPx = L*(MIN_CAR_PX/L) = MIN_CAR_PX exactly — a
+    // constant, completely erasing L-sensitivity across most of the
+    // practical 3-18m range. Deriving scale from spacing alone avoids that.
+    const MIN_SPACING_PX=90, MAX_SPACING_PX=320, BASE_SCALE=3.4;
+    const safeSpacing=Math.max(spacing_m,0.1);
+    const rawSpacingPx = safeSpacing*BASE_SCALE;
+    spacingPx = Math.max(MIN_SPACING_PX, Math.min(rawSpacingPx, MAX_SPACING_PX));
+    const scale = spacingPx/safeSpacing; // effective px/m, back-derived to keep spacingPx in bounds
+
+    const carLenPx = Math.max(L_m,0)*scale;
+    carHalfPx = carLenPx/2;
+    animSpeed = spacingPx / Math.max(h_s,0.05); // px/s so that detector crossing interval == h_s
+
+    // Rendered floor for the drawn rectangle: kept clearly LONGER than the
+    // car's own drawn width (30px) so even the smallest L still reads as a
+    // car silhouette, not a wide box; grows for real from this floor as L
+    // increases. carHalfPx (TRUE, unfloored) is kept separately for the
+    // detector crossing-timing logic, so "đo được" stays numerically exact
+    // — but the sh/sg dimension lines are drawn from visualHalfPx (this
+    // floored value) so they visually touch the car's actual drawn edges
+    // instead of ending partway inside the (visually larger) car body.
+    visualHalfPx = Math.max(carHalfPx, 21);
+    [frontCar, rearCar].forEach(c=>{
+      c.body.setAttribute('x', -visualHalfPx);
+      c.body.setAttribute('width', visualHalfPx*2);
+      c.glass.setAttribute('x', Math.max(visualHalfPx-16, -visualHalfPx+2));
+    });
+  }
+
+  function positionOverlay(){
+    const fy=LANE_MID;
+    frontShape().setAttribute('transform',`translate(${frontX} ${fy})`);
+    rearX = frontX - spacingPx;
+    rearShape().setAttribute('transform',`translate(${rearX} ${fy})`);
+
+    // both cars are drawn with the SAME rendered half-length (visualHalfPx);
+    // travel is left -> right, so each car's FRONT bumper is its RIGHT
+    // edge (center + visualHalfPx). carFront (larger x) is the lead car,
+    // carRear (smaller x) is the following car. The sh/sg dimension lines
+    // use visualHalfPx (not the true carHalfPx) so their tick marks land
+    // exactly on the car's drawn edges instead of partway inside it.
+    const leadCenter = Math.max(frontX, rearX);
+    const followCenter = Math.min(frontX, rearX);
+    const leadFrontX = leadCenter + visualHalfPx;
+    const followFrontX = followCenter + visualHalfPx;
+
+    // headway dimension line (front bumper to front bumper), above both lanes
+    const y1=60;
+    spacingLine.setAttribute('x1',leadFrontX); spacingLine.setAttribute('y1',y1);
+    spacingLine.setAttribute('x2',followFrontX); spacingLine.setAttribute('y2',y1);
+    spacingLabel.setAttribute('x',(leadFrontX+followFrontX)/2); spacingLabel.setAttribute('y',y1-8);
+    spacingLabel.textContent = 'sh = '+fmt(state.spacing,1)+' m';
+    spacingTick1.setAttribute('x1',leadFrontX); spacingTick1.setAttribute('x2',leadFrontX);
+    spacingTick1.setAttribute('y1',y1-6); spacingTick1.setAttribute('y2',y1+6);
+    spacingTick2.setAttribute('x1',followFrontX); spacingTick2.setAttribute('x2',followFrontX);
+    spacingTick2.setAttribute('y1',y1-6); spacingTick2.setAttribute('y2',y1+6);
+
+    // gap dimension line (rear bumper of lead car to front bumper of follow car), below lane
+    const gapX1=leadCenter-visualHalfPx, gapX2=followCenter+visualHalfPx;
+    const y2=LANE_BOT+62;
+    gapLine.setAttribute('x1',Math.min(gapX1,gapX2)); gapLine.setAttribute('y1',y2);
+    gapLine.setAttribute('x2',Math.max(gapX1,gapX2)); gapLine.setAttribute('y2',y2);
+    gapLabel.setAttribute('x',(gapX1+gapX2)/2); gapLabel.setAttribute('y',y2+16);
+    gapLabel.textContent = 'sg = '+fmt(state.gap,1)+' m';
+    gapTick1.setAttribute('x1',gapX1); gapTick1.setAttribute('x2',gapX1);
+    gapTick1.setAttribute('y1',y2-6); gapTick1.setAttribute('y2',y2+6);
+    gapTick2.setAttribute('x1',gapX2); gapTick2.setAttribute('x2',gapX2);
+    gapTick2.setAttribute('y1',y2-6); gapTick2.setAttribute('y2',y2+6);
+  }
+  function frontShape(){ return carFront.firstChild; }
+  function rearShape(){ return carRear.firstChild; }
+
+  function tick(ts){
+    if(lastTs===null) lastTs=ts;
+    const dt=Math.min((ts-lastTs)/1000, 0.05);
+    lastTs=ts;
+
+    if(!reduceMotion){
+      const prevFront=frontX, prevRear=rearX;
+      const prevLeadCenter=Math.max(prevFront,prevRear), prevFollowCenter=Math.min(prevFront,prevRear);
+      const prevGapA=prevLeadCenter-carHalfPx, prevGapB=prevFollowCenter+carHalfPx;
+
+      frontX += animSpeed*dt;
+      rearX = frontX - spacingPx;
+
+      // loop (off the right edge -> respawn off the left edge)
+      if(frontX > VB_W+80){
+        frontX = -80;
+        frontCrossT=null; rearCrossT=null; gapStartT=null; gapEndT=null;
+      }
+
+      // headway crossing (front bumper to front bumper) — amber pulses
+      if(prevFront<=DETECTOR_X && frontX>DETECTOR_X){
+        frontCrossT=performance.now();
+        pulse(pulseFront);
+      }
+      if(prevRear<=DETECTOR_X && rearX>DETECTOR_X){
+        rearCrossT=performance.now();
+        pulse(pulseRear);
+        if(frontCrossT){ measuredH=(rearCrossT-frontCrossT)/1000; }
+      }
+
+      // gap crossing — blink exactly when the rear bumper of the lead car
+      // (gap start) and the front bumper of the follow car (gap end)
+      // pass the detector; the time between the two IS the time gap.
+      const leadCenter=Math.max(frontX,rearX), followCenter=Math.min(frontX,rearX);
+      const gapA=leadCenter-carHalfPx, gapB=followCenter+carHalfPx;
+      if(prevGapA<=DETECTOR_X && gapA>DETECTOR_X){
+        gapStartT=performance.now();
+        pulse(pulseGapA);
+      }
+      if(prevGapB<=DETECTOR_X && gapB>DETECTOR_X){
+        gapEndT=performance.now();
+        pulse(pulseGapB);
+        if(gapStartT){ measuredGapT=(gapEndT-gapStartT)/1000; }
+      }
+
+      // rear bumper of the FOLLOW car — the 4th and last reference point
+      // (front of lead, rear of lead, front of follow, rear of follow),
+      // so every "đầu xe" / "cuối xe" moment of both cars blinks.
+      const prevFollowRear=prevFollowCenter-carHalfPx, followRearX=followCenter-carHalfPx;
+      if(prevFollowRear<=DETECTOR_X && followRearX>DETECTOR_X){
+        pulse(pulseFollowRear);
+      }
+    }
+
+    positionOverlay();
+    hwTimer.textContent = reduceMotion
+      ? ('h = '+fmt(state.h,1)+' s (hoạt ảnh đã tắt theo cài đặt trình duyệt)')
+      : (measuredH ? ('Δt headway đo được ≈ '+measuredH.toFixed(2)+' s') : 'đang đo Δt headway…');
+    gapTimer.textContent = reduceMotion
+      ? ('time gap = '+fmt(state.gapTime,2)+' s')
+      : (measuredGapT!=null ? ('Δt gap đo được ≈ '+measuredGapT.toFixed(2)+' s') : 'đang đo Δt gap…');
+
+    requestAnimationFrame(tick);
+  }
+
+  function pulse(node){
+    node.setAttribute('opacity',1);
+    node.setAttribute('r',4);
+    const start=performance.now();
+    function grow(ts){
+      const t=(ts-start)/450;
+      if(t>=1){ node.setAttribute('opacity',0); return; }
+      node.setAttribute('r', 4+t*14);
+      node.setAttribute('opacity', 1-t);
+      requestAnimationFrame(grow);
+    }
+    requestAnimationFrame(grow);
+  }
+
+  requestAnimationFrame(tick);
+
+  // ---------- Charts ----------
+  const speedAxis=[]; for(let v=10;v<=120;v+=5) speedAxis.push(v);
+  const SENS_SPEEDS=[50,60,70,80,90,100,110,120];
+  const SENS_GAPS=[1,2,3,4,5,6];
+  const sensColors=['#128C7E','#33886A','#558456','#768042','#987D2E','#B9791A'];
+
+  const chartSpacingCtx=document.getElementById('chartSpacing').getContext('2d');
+  const chartSensCtx=document.getElementById('chartSensitivity').getContext('2d');
+  const chartGapDensityCtx=document.getElementById('chartGapDensity').getContext('2d');
+
+  const commonGrid={color:'rgba(30,60,90,0.09)'};
+  const commonFont={family:"IBM Plex Sans", size:11};
+  Chart.defaults.color='#3E5064';
+  Chart.defaults.font.family="IBM Plex Sans";
+  Chart.defaults.font.size=11;
+
+  const chartSpacing=new Chart(chartSpacingCtx,{
+    type:'line',
+    data:{labels:speedAxis,datasets:[
+      {label:'Spacing sh (m)',data:[],borderColor:'#B9791A',backgroundColor:'rgba(185,121,26,0.12)',tension:0.25,pointRadius:0,borderWidth:2.4,fill:true},
+      {label:'Gap sg (m)',data:[],borderColor:'#128C7E',backgroundColor:'rgba(18,140,126,0.12)',tension:0.25,pointRadius:0,borderWidth:2.4,fill:true}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},
+      scales:{x:{title:{display:true,text:'Tốc độ v (km/h)'},grid:commonGrid},
+               y:{title:{display:true,text:'Khoảng cách (m)'},grid:commonGrid,beginAtZero:true}},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12}}}}
+  });
+
+  const chartSens=new Chart(chartSensCtx,{
+    type:'line',
+    data:{labels:SENS_SPEEDS,datasets:SENS_GAPS.map((tg,i)=>({
+      label:'tg = '+tg+' s',
+      data:SENS_SPEEDS.map(v=>(v/3.6)*tg),
+      borderColor:sensColors[i],
+      backgroundColor:sensColors[i],
+      pointRadius:3,
+      pointHoverRadius:5,
+      borderWidth:2.2,
+      tension:0.2
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},
+      scales:{x:{title:{display:true,text:'Tốc độ v (km/h)'},grid:commonGrid},
+               y:{title:{display:true,text:'Khoảng cách sg = v·tg (m)'},grid:commonGrid,beginAtZero:true}},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12}},
+        tooltip:{callbacks:{label:(ctx)=>ctx.dataset.label+': '+ctx.parsed.y.toFixed(1)+' m'}}}}
+  });
+
+  function buildSensitivityTable(){
+    const table=document.getElementById('sensTable');
+    const thead='<thead><tr><th>v (km/h)</th>'+SENS_GAPS.map(tg=>'<th>tg = '+tg+' s</th>').join('')+'</tr></thead>';
+    const rows=SENS_SPEEDS.map(v=>{
+      const cells=SENS_GAPS.map(tg=>{
+        const d=(v/3.6)*tg;
+        return '<td data-v="'+v+'" data-tg="'+tg+'">'+d.toFixed(1)+'</td>';
+      }).join('');
+      return '<tr><td class="rowhead">'+v+'</td>'+cells+'</tr>';
+    }).join('');
+    table.innerHTML=thead+'<tbody>'+rows+'</tbody>';
+  }
+  buildSensitivityTable();
+
+  function highlightSensitivity(){
+    const nearestV=SENS_SPEEDS.reduce((a,b)=>Math.abs(b-state.v)<Math.abs(a-state.v)?b:a);
+    const nearestTg=SENS_GAPS.reduce((a,b)=>Math.abs(b-state.tg)<Math.abs(a-state.tg)?b:a);
+    document.querySelectorAll('#sensTable td[data-v]').forEach(td=>{
+      const hit=(+td.dataset.v===nearestV && +td.dataset.tg===nearestTg);
+      td.classList.toggle('hit',hit);
+    });
+  }
+
+  const chartGapDensity=new Chart(chartGapDensityCtx,{
+    type:'line',
+    data:{datasets:[
+      {label:'Mật độ k(tg)',data:[],borderColor:'#128C7E',backgroundColor:'rgba(18,140,126,0.12)',pointRadius:0,borderWidth:2.4,tension:0.25,fill:true,parsing:false},
+      {label:'tg đang chọn',data:[],borderColor:'#16283C',backgroundColor:'#16283C',pointRadius:5,pointHoverRadius:6,showLine:false,parsing:false}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:250},
+      scales:{
+        x:{type:'linear',title:{display:true,text:'Time gap, tg (s)'},grid:commonGrid,min:0},
+        y:{title:{display:true,text:'Mật độ k (xe/km/làn)'},grid:commonGrid,beginAtZero:true}
+      },
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,boxHeight:12}}}}
+  });
+
+  // ---------- update everything ----------
+  function updateAll(){
+    const r=compute(state.v,state.tg,state.L,state.tr,state.decel);
+    Object.assign(state,r);
+
+    // readouts
+    spacingOut.textContent=fmt(r.spacing,1);
+    gapOut.textContent=fmt(r.gap,1);
+    hOut.textContent=fmt(r.h,2);
+    densityOut.textContent=fmt(r.density,1);
+    flowOut.textContent=fmt(r.flow,0);
+    dReactOut.textContent=fmt(r.dReact,1);
+    dBrakeOut.textContent=fmt(r.dBrake,1);
+    ssdOut.textContent=fmt(r.stopDist,1);
+    updateSsdDiagram(r.dReact,r.dBrake);
+
+    capLeft.textContent='tg = '+fmt(state.tg,1)+' s (h = '+fmt(state.h,1)+' s)';
+    capRight.textContent='v = '+fmt(state.v,0)+' km/h';
+
+    layoutDiagram(r.spacing, state.L, state.h);
+    // reset detector-crossing timestamps too, not just the displayed value —
+    // otherwise the next crossing could pair a stale front-cross time with a
+    // rear-cross time measured under the new speed/headway and show a wrong Δt.
+    measuredH=null; frontCrossT=null; rearCrossT=null;
+    measuredGapT=null; gapStartT=null; gapEndT=null;
+
+    highlightSensitivity();
+
+    // chart 1 data across speed axis, fixed tg & L
+    const sp=[], gp=[];
+    speedAxis.forEach(v=>{
+      const c=compute(v,state.tg,state.L,state.tr,state.decel);
+      sp.push(c.spacing); gp.push(c.gap);
+    });
+    chartSpacing.data.datasets[0].data=sp;
+    chartSpacing.data.datasets[1].data=gp;
+    chartSpacing.update('none');
+
+    updateGapDensity();
+  }
+
+  function updateGapDensity(){
+    // sweep tg (time gap) over the slider's own range, holding v and L at
+    // their current values — this is the direct "gap tăng -> mật độ giảm"
+    // relationship the section is about.
+    const pts=[];
+    for(let i=0;i<=37;i++){
+      const tg = 0.3 + i*0.1;
+      const c = compute(state.v, tg, state.L, state.tr, state.decel);
+      pts.push({x:+tg.toFixed(2), y:c.density});
+    }
+    chartGapDensity.data.datasets[0].data=pts;
+    chartGapDensity.data.datasets[1].data=[{x:state.tg,y:state.density}];
+    chartGapDensity.update('none');
+  }
+
+  // ---------- wire up controls ----------
+  function bindRange(range,label,decimals,suffix,key,extra){
+    range.addEventListener('input',()=>{
+      const v=parseFloat(range.value);
+      state[key]=v;
+      label.textContent=fmt(v,decimals)+suffix;
+      if(extra) extra();
+      updateAll();
+    });
+  }
+  bindRange(vRange,vVal,0,' km/h','v');
+  bindRange(tgRange,tgVal,1,' s','tg');
+  bindRange(lRange,lVal,1,' m','L');
+  bindRange(trRange,trVal,1,' s','tr');
+
+  vehTypeSelect.addEventListener('change',()=>{
+    const preset = VEHICLE_PRESETS[vehTypeSelect.value];
+    state.vehType = vehTypeSelect.value;
+    state.decel = preset.decel;
+    vehTypeVal.textContent = preset.label;
+    updateAll();
+  });
+
+  updateAll();
+})();
+</script>
+</body>
+</html>
